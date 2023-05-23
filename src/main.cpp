@@ -1,7 +1,9 @@
-
+#include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
 #include <TTN_esp32.h>
 // #include "TTN_CayenneLPP.h"
-
+#include <Adafruit_BME280.h>
 /***************************************************************************
  *  Go to your TTN console register a device then the copy fields
  *  and replace the CHANGE_ME strings below
@@ -9,6 +11,15 @@
 const char *devEui = "70B3D57ED004397D";                 // Change to TTN Device EUI
 const char *appEui = "1300000000000013";                 // Change to TTN Application EUI
 const char *appKey = "47521E11573093C237C7333983DD475C"; // Chaneg to TTN Application Key
+
+float temp ;
+const char *messagee = "selam";
+
+#define BME_SDA 21    // GPIO pin connected to BME280's SDA
+#define BME_SCL 22    // GPIO pin connected to BME280's SCL
+#define SEALEVELPRESSURE_HPA (1013.25)
+
+Adafruit_BME280 bme;   // Create an instance of the BME280 sensor
 
 TTN_esp32 ttn;
 // TTN_CayenneLPP lpp;
@@ -81,10 +92,6 @@ void waitForTransactions()
     Serial.println("Waiting took " + String(ttn.waitForPendingTransactions()) + "ms");
 }
 
-
-const char *messagee = "selam";
-float temp = 24.5;
-
 void sendData(const char *message)
 {
     // Metni uint8_t türünden bir byte dizisine dönüştürme
@@ -105,9 +112,18 @@ void setup()
 
     pinMode(2, OUTPUT);
     digitalWrite(2, HIGH);
-    delay(30);
+    delay(300);
 
-    // setCpuFrequencyMhz(10); // reduce clock to consume low current
+    bool status = bme.begin(0x76); 
+     
+    if (!status) {
+    Serial.println("Could not find a valid BME280 sensor, check wiring!");
+    while (1);
+    }
+    Serial.println("Bme280 init and Get Temp value");
+    temp = bme.readTemperature();
+
+     //setCpuFrequencyMhz(10); // reduce clock to consume low current
 
     // Print the wakeup reason for ESP32
     print_wakeup_reason();
