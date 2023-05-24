@@ -4,6 +4,11 @@
 #include <TTN_esp32.h>
 // #include "TTN_CayenneLPP.h"
 #include <Adafruit_BME280.h>
+
+#include <WiFi.h>
+#include <AsyncEventSource.h>
+#include <AsyncElegantOTA.h>
+#include <AsyncTCP.h>
 /***************************************************************************
  *  Go to your TTN console register a device then the copy fields
  *  and replace the CHANGE_ME strings below
@@ -12,21 +17,24 @@ const char *devEui = "70B3D57ED004397D";                 // Change to TTN Device
 const char *appEui = "1300000000000013";                 // Change to TTN Application EUI
 const char *appKey = "47521E11573093C237C7333983DD475C"; // Chaneg to TTN Application Key
 
-float temp ;
+float temp;
 const char *messagee = "selam";
 
-#define BME_SDA 21    // GPIO pin connected to BME280's SDA
-#define BME_SCL 22    // GPIO pin connected to BME280's SCL
+#define BME_SDA 21 // GPIO pin connected to BME280's SDA
+#define BME_SCL 22 // GPIO pin connected to BME280's SCL
 #define SEALEVELPRESSURE_HPA (1013.25)
 
-Adafruit_BME280 bme;   // Create an instance of the BME280 sensor
+Adafruit_BME280 bme; // Create an instance of the BME280 sensor
 
 TTN_esp32 ttn;
-// TTN_CayenneLPP lpp;
+
+AsyncWebServer server(80);
 
 // #define C3
+const char *ssid = "ISUBU_WiFi";
+const char *password = "DenemE123!!";
 
-#define SLEEP_SECONDS 30
+#define SLEEP_SECONDS 10
 
 #ifdef C3
 
@@ -46,7 +54,15 @@ TTN_esp32 ttn;
 #define DIO2 27
 #endif
 
+bool isSleep = true;
+bool wifiAcikMi = false;
+static unsigned long wifiAcilmaZamani = 0;
+
 String sensorOku();
+void wifiKontrol();
+void WiFiBaglan(bool durum);
+void deviceGoingToSleep();
+void webServer();
 
 void message(const uint8_t *payload, size_t size, uint8_t port, int rssi)
 {
@@ -55,6 +71,8 @@ void message(const uint8_t *payload, size_t size, uint8_t port, int rssi)
     for (int i = 0; i < size; i++)
     {
         Serial.printf(" %02X", payload[i]);
+        if (payload[i] == 0x33)
+            isSleep = false;
     }
     Serial.println();
 }
@@ -114,16 +132,17 @@ void setup()
     digitalWrite(2, HIGH);
     delay(300);
 
-    bool status = bme.begin(0x76); 
-     
-    if (!status) {
-    Serial.println("Could not find a valid BME280 sensor, check wiring!");
-    while (1);
-    }
-    Serial.println("Bme280 init and Get Temp value");
-    temp = bme.readTemperature();
+    // bool status = bme.begin(0x76);
 
-     //setCpuFrequencyMhz(10); // reduce clock to consume low current
+    // if (!status) {
+    // Serial.println("Could not find a valid BME280 sensor, check wiring!");
+    // while (1);
+    // }
+
+    // Serial.println("Bme280 init and Get Temp value");
+    // temp = bme.readTemperature();
+
+    // setCpuFrequencyMhz(10); // reduce clock to consume low current
 
     // Print the wakeup reason for ESP32
     print_wakeup_reason();
@@ -153,12 +172,19 @@ void setup()
     // OR
     // Set timer to 30 seconds
     // Sleep time in micro seconds so multiply by 1000000
-    esp_sleep_enable_timer_wakeup(SLEEP_SECONDS * 1000000);
+    if (isSleep == true)
+    {
+        deviceGoingToSleep();
+    }
+    // Everything beyond this point will never be called
+}
 
+void deviceGoingToSleep()
+{
+    esp_sleep_enable_timer_wakeup(SLEEP_SECONDS * 1000000);
     // Go to sleep now
     Serial.println("Going to sleep!");
     esp_deep_sleep_start();
-    // Everything beyond this point will never be called
 }
 
 String sensorOku()
@@ -170,7 +196,63 @@ String sensorOku()
     return gidenVeri;
 }
 
+void wifiKontrol()
+{
+    if (isSleep == false)
+    {
+        if (!wifiAcikMi)
+        {
+            WiFiBaglan(true);
+        }
+        else if (millis() - wifiAcilmaZamani > 120000)
+        {
+            WiFiBaglan(false);
+        }
+    }
+}
+
+void WiFiBaglan(bool durum)
+{
+    if (durum)
+    {
+        WiFi.begin(ssid, password);
+        Serial.println("WiFiye Baglaniyor..");
+        while (WiFi.status() != WL_CONNECTED)
+        {
+            delay(200);
+            Serial.print(".");
+        }
+        Serial.println(WiFi.localIP());
+        wifiAcilmaZamani = millis();
+        wifiAcikMi = true;
+
+        Serial.println("WiFi'ye Baglandi");
+        webServer();
+    }
+    
+    else if (!durum)
+    {
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+        Serial.println("WiFi baglantisi koparildi");
+        wifiAcikMi = false;
+        isSleep = true;
+        deviceGoingToSleep();
+    }
+}
+
+void webServer(){
+        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/plain", "Hi! This is a sample response."); });
+
+        AsyncElegantOTA.begin(&server); // Start AsyncElegantOTA
+        server.begin();
+        Serial.println("HTTP server started");
+}
+
 void loop()
 {
-    // Never called
+    wifiKontrol();
+    Serial.println("awakeee");
+    delay(1000);
 }
