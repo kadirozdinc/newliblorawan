@@ -12,21 +12,21 @@ const char *devEui = "70B3D57ED004397D";                 // Change to TTN Device
 const char *appEui = "1300000000000013";                 // Change to TTN Application EUI
 const char *appKey = "47521E11573093C237C7333983DD475C"; // Chaneg to TTN Application Key
 
-float temp ;
+float temp = 12.5;
 const char *messagee = "selam";
 
-#define BME_SDA 21    // GPIO pin connected to BME280's SDA
-#define BME_SCL 22    // GPIO pin connected to BME280's SCL
-#define SEALEVELPRESSURE_HPA (1013.25)
+// #define BME_SDA 21    // GPIO pin connected to BME280's SDA
+// #define BME_SCL 22    // GPIO pin connected to BME280's SCL
+// #define SEALEVELPRESSURE_HPA (1013.25)
 
-Adafruit_BME280 bme;   // Create an instance of the BME280 sensor
+// Adafruit_BME280 bme;   // Create an instance of the BME280 sensor
 
 TTN_esp32 ttn;
 // TTN_CayenneLPP lpp;
 
 // #define C3
 
-#define SLEEP_SECONDS 30
+#define SLEEP_SECONDS 10
 
 #ifdef C3
 
@@ -52,12 +52,36 @@ void message(const uint8_t *payload, size_t size, uint8_t port, int rssi)
 {
     Serial.println("-- MESSAGE");
     Serial.printf("Received %d bytes on port %d (RSSI=%ddB) :", size, port, rssi);
+    String asciiData;
     for (int i = 0; i < size; i++)
     {
-        Serial.printf(" %02X", payload[i]);
+         Serial.printf(" %c", payload[i]);
+        asciiData += (char)payload[i];
     }
     Serial.println();
+    Serial.println(asciiData);
+
 }
+
+// void message(const uint8_t *hexData, size_t length, uint8_t port, int rssi)
+// {
+//     Serial.println("-- MESSAGE");
+//     Serial.printf("Received %d bytes on port %d (RSSI=%ddB) :", length, port, rssi);
+//     // for (int i = 0; i < size; i++)
+//     // {
+//     //     Serial.printf(" %02X", payload[i]);
+//     // }
+//     char stringData[length / 2 + 1];
+//     for (size_t i = 0; i < length; i += 2)
+//     {
+//         stringData[i / 2] = "0123456789ABCDEF"[hexData[i] >> 4];
+//         stringData[i / 2 + 1] = "0123456789ABCDEF"[hexData[i] & 0x0F];
+//     }
+
+//     stringData[length / 2] = '\0'; // String'i sonlandır
+
+//     Serial.println(stringData);
+// }
 
 void print_wakeup_reason()
 {
@@ -114,16 +138,16 @@ void setup()
     digitalWrite(2, HIGH);
     delay(300);
 
-    bool status = bme.begin(0x76); 
-     
-    if (!status) {
-    Serial.println("Could not find a valid BME280 sensor, check wiring!");
-    while (1);
-    }
-    Serial.println("Bme280 init and Get Temp value");
-    temp = bme.readTemperature();
+    // bool status = bme.begin(0x76);
 
-     //setCpuFrequencyMhz(10); // reduce clock to consume low current
+    // if (!status) {
+    // Serial.println("Could not find a valid BME280 sensor, check wiring!");
+    // while (1);
+    // }
+    // Serial.println("Bme280 init and Get Temp value");
+    // temp = bme.readTemperature();
+
+    // setCpuFrequencyMhz(10); // reduce clock to consume low current
 
     // Print the wakeup reason for ESP32
     print_wakeup_reason();
