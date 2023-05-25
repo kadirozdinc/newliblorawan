@@ -7,8 +7,9 @@
 
 #include <WiFi.h>
 #include <AsyncEventSource.h>
-#include <AsyncElegantOTA.h>
 #include <AsyncTCP.h>
+#include <AsyncElegantOTA.h>
+#include <WebSerial.h>
 /***************************************************************************
  *  Go to your TTN console register a device then the copy fields
  *  and replace the CHANGE_ME strings below
@@ -54,7 +55,7 @@ const char *password = "DenemE123!!";
 #define DIO2 27
 #endif
 
-bool isSleep = true;
+bool isSleep = false;
 bool wifiAcikMi = false;
 static unsigned long wifiAcilmaZamani = 0;
 
@@ -62,19 +63,49 @@ String sensorOku();
 void wifiKontrol();
 void WiFiBaglan(bool durum);
 void deviceGoingToSleep();
+void sendToChirpstackData();
+void recvMsg(uint8_t *data, size_t len);
 void webServer();
+
+/* Message callback of WebSerial */
+void recvMsg(uint8_t *data, size_t len)
+{
+    WebSerial.print("Webden gelen geri:");
+    String d = "";
+    for (int i = 0; i < len; i++)
+    {
+        d += char(data[i]);
+    }
+    WebSerial.println(d);
+}
 
 void message(const uint8_t *payload, size_t size, uint8_t port, int rssi)
 {
     Serial.println("-- MESSAGE");
     Serial.printf("Received %d bytes on port %d (RSSI=%ddB) :", size, port, rssi);
+    
+    String gelen = "";
     for (int i = 0; i < size; i++)
     {
         Serial.printf(" %02X", payload[i]);
-        if (payload[i] == 0x33)
+        //Serial.printf(" %c", payload[i]);
+        gelen += char(payload[i]);
+
+        if (payload[i] == 0x33) //uyan
             isSleep = false;
+
+        if (payload[i] == 0x55) //uyu
+            isSleep = true;
+            deviceGoingToSleep();
+
+        if (wifiAcikMi)
+        {
+            //WebSerial.println(gelen);
+            WebSerial.printf(" %02X", payload[i]);
+        }
     }
-    Serial.println();
+    WebSerial.println();
+    
 }
 
 void print_wakeup_reason()
@@ -161,11 +192,8 @@ void setup()
     Serial.println("\njoined!");
 
     // Make sure any pending transactions are handled first
-    waitForTransactions();
-    // Send our data
-    sendData(sensorOku().c_str());
-    // Make sure our transactions is handled before going to sleep
-    waitForTransactions();
+
+    sendToChirpstackData();
 
     // Configure GPIO33 as ext0 wake up source for HIGH logic level
     // esp_sleep_enable_ext0_wakeup(GPIO_NUM_35, 1);
@@ -187,6 +215,15 @@ void deviceGoingToSleep()
     esp_deep_sleep_start();
 }
 
+void sendToChirpstackData()
+{
+    waitForTransactions();
+    // Send our data
+    sendData(sensorOku().c_str());
+    // Make sure our transactions is handled before going to sleep
+    waitForTransactions();
+}
+
 String sensorOku()
 {
     String selam = "selam";
@@ -198,17 +235,32 @@ String sensorOku()
 
 void wifiKontrol()
 {
+    static unsigned long sonMesajGondermeZamani = 0;
+
     if (isSleep == false)
     {
         if (!wifiAcikMi)
         {
             WiFiBaglan(true);
         }
-        else if (millis() - wifiAcilmaZamani > 120000)
+
+        else if (millis() - wifiAcilmaZamani > 300000)
         {
             WiFiBaglan(false);
         }
+
+        else if (millis() - sonMesajGondermeZamani > 10000)
+        {
+            sonMesajGondermeZamani = millis();
+            sendToChirpstackData();
+        }
+
+        else if (wifiAcikMi)
+        {
+            WebSerial.println("I'm awakeee");
+        }
     }
+
 }
 
 void WiFiBaglan(bool durum)
@@ -229,7 +281,7 @@ void WiFiBaglan(bool durum)
         Serial.println("WiFi'ye Baglandi");
         webServer();
     }
-    
+
     else if (!durum)
     {
         WiFi.disconnect(true);
@@ -241,18 +293,22 @@ void WiFiBaglan(bool durum)
     }
 }
 
-void webServer(){
-        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/plain", "Hi! This is a sample response."); });
+void webServer()
+{
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/plain", "Hi! This is a sample response."); });
 
-        AsyncElegantOTA.begin(&server); // Start AsyncElegantOTA
-        server.begin();
-        Serial.println("HTTP server started");
+    AsyncElegantOTA.begin(&server); // Start AsyncElegantOTA
+    WebSerial.begin(&server);
+    /* Attach Message Callback */
+    WebSerial.msgCallback(recvMsg);
+    server.begin();
+    Serial.println("HTTP server started");
 }
 
 void loop()
 {
     wifiKontrol();
     Serial.println("awakeee");
-    delay(1000);
+    delay(2000);
 }
