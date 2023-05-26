@@ -4,6 +4,8 @@
 #include <TTN_esp32.h>
 // #include "TTN_CayenneLPP.h"
 #include <Adafruit_BME280.h>
+#include <ArduinoJson.h>
+
 /***************************************************************************
  *  Go to your TTN console register a device then the copy fields
  *  and replace the CHANGE_ME strings below
@@ -22,7 +24,8 @@ const char *messagee = "selam";
 // Adafruit_BME280 bme;   // Create an instance of the BME280 sensor
 
 TTN_esp32 ttn;
-// TTN_CayenneLPP lpp;
+
+StaticJsonDocument<96> doc;
 
 // #define C3
 
@@ -47,6 +50,7 @@ TTN_esp32 ttn;
 #endif
 
 String sensorOku();
+void parseJson(String gelen);
 
 void message(const uint8_t *payload, size_t size, uint8_t port, int rssi)
 {
@@ -55,12 +59,31 @@ void message(const uint8_t *payload, size_t size, uint8_t port, int rssi)
     String asciiData;
     for (int i = 0; i < size; i++)
     {
-         Serial.printf(" %c", payload[i]);
+        Serial.printf(" %c", payload[i]);
         asciiData += (char)payload[i];
     }
     Serial.println();
     Serial.println(asciiData);
+    parseJson(asciiData);
+}
 
+void parseJson(String gelen)
+{
+    DeserializationError error = deserializeJson(doc, gelen);
+
+    if (error)
+    {
+        Serial.print("deserializeJson() failed: ");
+        Serial.println(error.c_str());
+        return;
+    }
+
+    int no = doc["no"];                   // 12
+    float temp = doc["temp"];             // 24.5
+    const char *message = doc["message"]; // "selam"
+    Serial.println(no);
+    Serial.println(temp);
+    Serial.println(message);
 }
 
 // void message(const uint8_t *hexData, size_t length, uint8_t port, int rssi)
