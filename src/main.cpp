@@ -15,7 +15,8 @@ const char *appEui = "1300000000000013";                 // Change to TTN Applic
 const char *appKey = "47521E11573093C237C7333983DD475C"; // Chaneg to TTN Application Key
 
 float temp = 12.5;
-const char *messagee = "selam";
+float hum = 30.5;
+String state = "normal";
 
 // #define BME_SDA 21    // GPIO pin connected to BME280's SDA
 // #define BME_SCL 22    // GPIO pin connected to BME280's SCL
@@ -24,7 +25,6 @@ const char *messagee = "selam";
 // Adafruit_BME280 bme;   // Create an instance of the BME280 sensor
 
 TTN_esp32 ttn;
-
 StaticJsonDocument<96> doc;
 
 // #define C3
@@ -49,8 +49,48 @@ StaticJsonDocument<96> doc;
 #define DIO2 27
 #endif
 
-String sensorOku();
+// Declerations
 void parseJson(String gelen);
+String formedAsJSON(float temp,float hum,String state);
+
+void print_wakeup_reason()
+{
+    esp_sleep_wakeup_cause_t wakeup_reason;
+    wakeup_reason = esp_sleep_get_wakeup_cause();
+    switch (wakeup_reason)
+    {
+    case 1:
+        Serial.println("Wakeup caused by external signal using RTC_IO");
+        break;
+    case 2:
+        Serial.println("Wakeup caused by external signal using RTC_CNTL");
+        break;
+    case 3:
+        Serial.println("Wakeup caused by timer");
+        break;
+    case 4:
+        Serial.println("Wakeup caused by touchpad");
+        break;
+    case 5:
+        Serial.println("Wakeup caused by ULP program");
+        break;
+    default:
+        Serial.println("Wakeup was not caused by deep sleep");
+        break;
+    }
+}
+
+void waitForTransactions()
+{
+    Serial.println("Waiting for pending transactions... ");
+    Serial.println("Waiting took " + String(ttn.waitForPendingTransactions()) + "ms");
+}
+
+/*
+Önce mesaj node-red tarafında JSON String olarak gönderiliyor burada biz bunu byte byte alıyoruz.
+Daha sonrasında byte byte alınan veri bir String JSON olarak birleştiriliyor daha sonrasında JSON
+kütüphanesi deserialize fonksiyonu ile parse işlemi gerçekleştiriliyor.
+*/
 
 void message(const uint8_t *payload, size_t size, uint8_t port, int rssi)
 {
@@ -86,59 +126,10 @@ void parseJson(String gelen)
     Serial.println(message);
 }
 
-// void message(const uint8_t *hexData, size_t length, uint8_t port, int rssi)
-// {
-//     Serial.println("-- MESSAGE");
-//     Serial.printf("Received %d bytes on port %d (RSSI=%ddB) :", length, port, rssi);
-//     // for (int i = 0; i < size; i++)
-//     // {
-//     //     Serial.printf(" %02X", payload[i]);
-//     // }
-//     char stringData[length / 2 + 1];
-//     for (size_t i = 0; i < length; i += 2)
-//     {
-//         stringData[i / 2] = "0123456789ABCDEF"[hexData[i] >> 4];
-//         stringData[i / 2 + 1] = "0123456789ABCDEF"[hexData[i] & 0x0F];
-//     }
-
-//     stringData[length / 2] = '\0'; // String'i sonlandır
-
-//     Serial.println(stringData);
-// }
-
-void print_wakeup_reason()
-{
-    esp_sleep_wakeup_cause_t wakeup_reason;
-    wakeup_reason = esp_sleep_get_wakeup_cause();
-    switch (wakeup_reason)
-    {
-    case 1:
-        Serial.println("Wakeup caused by external signal using RTC_IO");
-        break;
-    case 2:
-        Serial.println("Wakeup caused by external signal using RTC_CNTL");
-        break;
-    case 3:
-        Serial.println("Wakeup caused by timer");
-        break;
-    case 4:
-        Serial.println("Wakeup caused by touchpad");
-        break;
-    case 5:
-        Serial.println("Wakeup caused by ULP program");
-        break;
-    default:
-        Serial.println("Wakeup was not caused by deep sleep");
-        break;
-    }
-}
-
-void waitForTransactions()
-{
-    Serial.println("Waiting for pending transactions... ");
-    Serial.println("Waiting took " + String(ttn.waitForPendingTransactions()) + "ms");
-}
-
+/*
+Veri önce formedAsJSON fonksiyonu ile JSON String ifadesine dönüştürülüyor serialize fonksiyonu ile
+sonrasunda veri byte byte bir char dizisi içerisine dolduruluyor ve gönderiliyor
+*/
 void sendData(const char *message)
 {
     // Metni uint8_t türünden bir byte dizisine dönüştürme
@@ -149,6 +140,21 @@ void sendData(const char *message)
         payload[i] = static_cast<uint8_t>(message[i]);
     }
     ttn.sendBytes(payload, sizeof(payload), 1, 0);
+}
+
+String formedAsJSON(float temp, float hum, String state)
+{
+    StaticJsonDocument<200> doc;
+    doc["temp"] = temp;
+    doc["hum"] = hum;
+    doc["state"] = state;
+    // JSON verisini serileştirme
+    String json ;
+    serializeJson(doc, json);
+    //Serial.println(json);
+    //serializeJson(doc,Serial);
+    
+    return json;
 }
 
 void setup()
@@ -180,7 +186,7 @@ void setup()
     ttn.onMessage(message);
     // Join the network
     ttn.join(devEui, appEui, appKey);
-    Serial.print("Joining TTN ");
+    Serial.print("Joining ChirpStack Server");
     while (!ttn.isJoined())
     {
         Serial.print(".");
@@ -188,10 +194,11 @@ void setup()
     }
     Serial.println("\njoined!");
 
+
     // Make sure any pending transactions are handled first
     waitForTransactions();
     // Send our data
-    sendData(sensorOku().c_str());
+    sendData(formedAsJSON(temp,hum,state).c_str());
     // Make sure our transactions is handled before going to sleep
     waitForTransactions();
 
@@ -206,15 +213,6 @@ void setup()
     Serial.println("Going to sleep!");
     esp_deep_sleep_start();
     // Everything beyond this point will never be called
-}
-
-String sensorOku()
-{
-    String selam = "selam";
-    String tempp = (String)temp;
-    String gidenVeri = selam + "-" + tempp;
-
-    return gidenVeri;
 }
 
 void loop()
