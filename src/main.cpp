@@ -5,6 +5,7 @@
 // #include "TTN_CayenneLPP.h"
 #include <Adafruit_BME280.h>
 #include <ArduinoJson.h>
+#include "DHT.h"
 
 /***************************************************************************
  *  Go to your TTN console register a device then the copy fields
@@ -14,8 +15,8 @@ const char *devEui = "70B3D57ED004397D";                 // Change to TTN Device
 const char *appEui = "1300000000000013";                 // Change to TTN Application EUI
 const char *appKey = "47521E11573093C237C7333983DD475C"; // Chaneg to TTN Application Key
 
-float temp = 12.5;
-float hum = 30.5;
+float temp = 0;
+float hum = 0;
 String state = "normal";
 
 // #define BME_SDA 21    // GPIO pin connected to BME280's SDA
@@ -27,10 +28,16 @@ String state = "normal";
 TTN_esp32 ttn;
 StaticJsonDocument<96> doc;
 
-// #define C3
+//#define C3
 
-#define SLEEP_SECONDS 10
+#define DHTPIN 10
+#define DHTTYPE DHT22
 
+int cnt = 0;
+#define DEBUG
+
+#define SLEEP_SECONDS 20
+#define NON_JOINED_SLEEP_SECONDS 30
 #ifdef C3
 
 #define UNUSED_PIN 0xFF
@@ -39,6 +46,7 @@ StaticJsonDocument<96> doc;
 #define DIO0 1
 #define DIO1 2
 #define DIO2 0xFF
+#define REG_EN_3V3 9 // BreadBoard'da 10 a bağlı
 
 #else
 #define UNUSED_PIN 0xFF
@@ -47,11 +55,14 @@ StaticJsonDocument<96> doc;
 #define DIO0 12
 #define DIO1 14
 #define DIO2 27
+#define REG_EN_3V3 2
 #endif
+
+DHT dht(DHTPIN, DHTTYPE);
 
 // Declerations
 void parseJson(String gelen);
-String formedAsJSON(float temp,float hum,String state);
+String formedAsJSON(float temp, float hum, String state);
 
 void print_wakeup_reason()
 {
@@ -139,7 +150,7 @@ void sendData(const char *message)
     {
         payload[i] = static_cast<uint8_t>(message[i]);
     }
-    ttn.sendBytes(payload, sizeof(payload), 1, 0);
+    ttn.sendBytes(payload, sizeof(payload), 1, true);
 }
 
 String formedAsJSON(float temp, float hum, String state)
@@ -149,11 +160,11 @@ String formedAsJSON(float temp, float hum, String state)
     doc["hum"] = hum;
     doc["state"] = state;
     // JSON verisini serileştirme
-    String json ;
+    String json;
     serializeJson(doc, json);
-    //Serial.println(json);
-    //serializeJson(doc,Serial);
-    
+    // Serial.println(json);
+    // serializeJson(doc,Serial);
+
     return json;
 }
 
@@ -163,9 +174,16 @@ void setup()
     delay(1000);
     Serial.println("Starting");
 
-    pinMode(2, OUTPUT);
-    digitalWrite(2, HIGH);
+    pinMode(REG_EN_3V3, OUTPUT);
+    digitalWrite(REG_EN_3V3, HIGH);
+
+    dht.begin();
+
     delay(300);
+
+    hum = dht.readHumidity();
+    // Read temperature as Celsius (the default)
+    temp = dht.readTemperature();
 
     // bool status = bme.begin(0x76);
 
@@ -181,24 +199,51 @@ void setup()
     // Print the wakeup reason for ESP32
     print_wakeup_reason();
 
-    ttn.begin(SS, UNUSED_PIN, RST_LoRa, DIO0, DIO1, DIO2);
+
+    if(ttn.begin(SS, UNUSED_PIN, RST_LoRa, DIO0, DIO1, DIO2))
+    Serial.print("Radio initialized successfully");
+
     // Declare callback function for handling downlink messages from server
     ttn.onMessage(message);
     // Join the network
     ttn.join(devEui, appEui, appKey);
     Serial.print("Joining ChirpStack Server");
+
+    // LMIC_setLinkCheckMode(1);
+    // LMIC_setAdrMode(false);
+    // LMIC_setDrTxpow(DR_SF12, 14);
+    
+
     while (!ttn.isJoined())
     {
+        static int cnt = 0;
         Serial.print(".");
         delay(500);
+        cnt++;
+        if (cnt >= 30)
+        {
+            esp_sleep_enable_timer_wakeup(NON_JOINED_SLEEP_SECONDS * 1000000);
+            // Go to sleep now
+            Serial.println();
+            Serial.println("Cannot Joined,Sleep mode on for a while");
+            esp_deep_sleep_start();
+            // Everything beyond this point will never be called
+        }
     }
+      
     Serial.println("\njoined!");
 
-
+    // LMIC_enableTracking(0);
+    // LMIC_startJoining(); 
+    // LMIC_setPingable(1);
+    LMIC_setAdrMode(false);
+    LMIC_setDrTxpow(DR_SF12,14);
     // Make sure any pending transactions are handled first
     waitForTransactions();
+
     // Send our data
-    sendData(formedAsJSON(temp,hum,state).c_str());
+    sendData(formedAsJSON(temp, hum, state).c_str());
+    
     // Make sure our transactions is handled before going to sleep
     waitForTransactions();
 
