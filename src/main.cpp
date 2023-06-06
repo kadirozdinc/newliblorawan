@@ -13,8 +13,9 @@ const char *devEui = "70B3D57ED004397D";                 // Change to TTN Device
 const char *appEui = "1300000000000013";                 // Change to TTN Application EUI
 const char *appKey = "47521E11573093C237C7333983DD475C"; // Chaneg to TTN Application Key
 
-float temp = 12.5;
-float hum = 30.5;
+double temp = 12.543;
+double hum = 30.543;
+
 String state = "normal";
 
 TTN_esp32 ttn;
@@ -23,9 +24,11 @@ StaticJsonDocument<96> doc;
 #define DHTPIN 10
 #define DHTTYPE DHT22
 
+#define EXT_WAKEUP_PIN 2
+
 #define C3
 
-#define SLEEP_SECONDS 20
+#define SLEEP_SECONDS 45
 
 #ifdef C3
 
@@ -47,7 +50,10 @@ StaticJsonDocument<96> doc;
 
 // Declerations
 void parseJson(String gelen);
-String formedAsJSON(float temp, float hum, String state);
+String formedAsJSON(double temp, double hum, String state);
+double round2(double value);
+String getSensorData();
+
 DHT dht(DHTPIN, DHTTYPE);
 
 void print_wakeup_reason()
@@ -139,32 +145,38 @@ void sendData(const char *message)
     ttn.sendBytes(payload, sizeof(payload), 1, 0);
 }
 
-String formedAsJSON(float temp, float hum, String state)
+String formedAsJSON(double tempp, double humm, String state)
 {
-    temp = dht.readTemperature();
-    hum = dht.readHumidity();
     StaticJsonDocument<200> doc;
-    doc["temp"] = temp;
-    doc["hum"] = hum;
+    // Serial.println(humm);
+    // Serial.println(temp);
+
+    doc["temp"] = round2(tempp);
+    doc["hum"] = round2(humm);
     doc["state"] = state;
     // JSON verisini serileştirme
     String json;
     serializeJson(doc, json);
-    // Serial.println(json);
+    Serial.println(json);
     // serializeJson(doc,Serial);
 
     return json;
 }
 
+double round2(double value)
+{
+    return (int)(value * 100 + 0.5) / 100.0;
+}
+
 void setup()
 {
     Serial.begin(115200);
+    dht.begin();
     delay(500);
     Serial.println("Starting");
 
-    dht.begin();
-    delay(100);
-
+    temp = dht.readTemperature();
+    hum = dht.readHumidity();
 
     Serial.println(temp);
     Serial.println(hum);
@@ -188,7 +200,7 @@ void setup()
     ttn.join(devEui, appEui, appKey);
 
     LMIC_setAdrMode(false);
-    LMIC_setDrTxpow(DR_SF9, 14);
+    LMIC_setDrTxpow(DR_SF12, 14);
 
     Serial.print("Joining ChirpStack Server");
     while (!ttn.isJoined())
@@ -210,7 +222,10 @@ void setup()
     // OR
     // Set timer to 30 seconds
     // Sleep time in micro seconds so multiply by 1000000
+    
     esp_sleep_enable_timer_wakeup(SLEEP_SECONDS * 1000000);
+
+    esp_deep_sleep_enable_gpio_wakeup(1<<EXT_WAKEUP_PIN ,ESP_GPIO_WAKEUP_GPIO_HIGH);
 
     // Go to sleep now
     Serial.println("Going to sleep!");
