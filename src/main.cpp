@@ -5,7 +5,7 @@
 // #include "TTN_CayenneLPP.h"
 #include <Adafruit_BME280.h>
 #include <ArduinoJson.h>
-#include "DHT.h"
+//#include "DHT.h"
 
 /***************************************************************************
  *  Go to your TTN console register a device then the copy fields
@@ -28,7 +28,7 @@ String state = "normal";
 TTN_esp32 ttn;
 StaticJsonDocument<96> doc;
 
-//#define C3
+#define C3
 
 #define DHTPIN 10
 #define DHTTYPE DHT22
@@ -43,10 +43,10 @@ int cnt = 0;
 #define UNUSED_PIN 0xFF
 #define SS 7
 #define RST_LoRa 3
-#define DIO0 1
-#define DIO1 2
+#define DIO0 18
+#define DIO1 19
 #define DIO2 0xFF
-#define REG_EN_3V3 9 // BreadBoard'da 10 a bağlı
+#define REG_EN_3V3 0 // BreadBoard'da 10 a bağlı
 
 #else
 #define UNUSED_PIN 0xFF
@@ -58,7 +58,7 @@ int cnt = 0;
 #define REG_EN_3V3 2
 #endif
 
-DHT dht(DHTPIN, DHTTYPE);
+//DHT dht(DHTPIN, DHTTYPE);
 
 // Declerations
 void parseJson(String gelen);
@@ -177,13 +177,13 @@ void setup()
     pinMode(REG_EN_3V3, OUTPUT);
     digitalWrite(REG_EN_3V3, HIGH);
 
-    dht.begin();
+    //dht.begin();
 
     delay(300);
 
-    hum = dht.readHumidity();
-    // Read temperature as Celsius (the default)
-    temp = dht.readTemperature();
+    // hum = dht.readHumidity();
+    // // Read temperature as Celsius (the default)
+    // temp = dht.readTemperature();
 
     // bool status = bme.begin(0x76);
 
@@ -201,7 +201,7 @@ void setup()
 
 
     if(ttn.begin(SS, UNUSED_PIN, RST_LoRa, DIO0, DIO1, DIO2))
-    Serial.print("Radio initialized successfully");
+    Serial.println("Radio initialized successfully");
 
     // Declare callback function for handling downlink messages from server
     ttn.onMessage(message);
@@ -210,8 +210,8 @@ void setup()
     Serial.print("Joining ChirpStack Server");
 
     // LMIC_setLinkCheckMode(1);
-    // LMIC_setAdrMode(false);
-    // LMIC_setDrTxpow(DR_SF12, 14);
+     LMIC_setAdrMode(false);
+     LMIC_setDrTxpow(DR_SF12, 14);
     
 
     while (!ttn.isJoined())
@@ -220,7 +220,7 @@ void setup()
         Serial.print(".");
         delay(500);
         cnt++;
-        if (cnt >= 30)
+        if (cnt >= 70)
         {
             esp_sleep_enable_timer_wakeup(NON_JOINED_SLEEP_SECONDS * 1000000);
             // Go to sleep now
@@ -233,11 +233,10 @@ void setup()
       
     Serial.println("\njoined!");
 
-    // LMIC_enableTracking(0);
-    // LMIC_startJoining(); 
-    // LMIC_setPingable(1);
-    LMIC_setAdrMode(false);
-    LMIC_setDrTxpow(DR_SF12,14);
+
+    // LMIC_setAdrMode(false);
+    // LMIC_setDrTxpow(DR_SF12,14);
+
     // Make sure any pending transactions are handled first
     waitForTransactions();
 
