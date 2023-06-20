@@ -25,6 +25,7 @@ StaticJsonDocument<96> doc;
 #define DHTTYPE DHT22
 
 #define EXT_WAKEUP_PIN 2
+#define ADC_READ_PIN 1
 
 #define C3
 
@@ -180,7 +181,7 @@ void setup()
 
     Serial.println(temp);
     Serial.println(hum);
-
+    Serial.println(analogRead(ADC_READ_PIN)*(2.9/4095)*4.4);
     pinMode(REG_3V3_EN, OUTPUT);
     digitalWrite(REG_3V3_EN, HIGH);
     delay(300);
@@ -195,12 +196,10 @@ void setup()
     ttn.onMessage(message);
     // Join the network
 
-    // LMIC_setAdrMode(false);
-
     ttn.join(devEui, appEui, appKey);
 
     LMIC_setAdrMode(false);
-    LMIC_setDrTxpow(DR_SF12, 14);
+    LMIC_setDrTxpow(DR_SF10, 14);
 
     Serial.print("Joining ChirpStack Server");
     while (!ttn.isJoined())
@@ -217,14 +216,10 @@ void setup()
     // Make sure our transactions is handled before going to sleep
     waitForTransactions();
 
-    // Configure GPIO33 as ext0 wake up source for HIGH logic level
-    // esp_sleep_enable_ext0_wakeup(GPIO_NUM_35, 1);
-    // OR
-    // Set timer to 30 seconds
     // Sleep time in micro seconds so multiply by 1000000
-    
     esp_sleep_enable_timer_wakeup(SLEEP_SECONDS * 1000000);
 
+    // Set wakeUp pin to wake the system up when button is pressed
     esp_deep_sleep_enable_gpio_wakeup(1<<EXT_WAKEUP_PIN ,ESP_GPIO_WAKEUP_GPIO_HIGH);
 
     // Go to sleep now
