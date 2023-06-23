@@ -15,6 +15,7 @@ const char *appKey = "47521E11573093C237C7333983DD475C"; // Chaneg to TTN Applic
 
 double temp = 12.543;
 double hum = 30.543;
+double bat = 0;
 
 String state = "normal";
 
@@ -29,7 +30,7 @@ StaticJsonDocument<96> doc;
 
 #define C3
 
-#define SLEEP_SECONDS 45
+#define SLEEP_SECONDS 15
 
 #ifdef C3
 
@@ -138,6 +139,8 @@ void sendData(const char *message)
 {
     // Metni uint8_t türünden bir byte dizisine dönüştürme
     size_t length = strlen(message);
+    Serial.println(length);
+    Serial.println(LMIC.datarate);
     uint8_t payload[length];
     for (size_t i = 0; i < length; i++)
     {
@@ -146,7 +149,7 @@ void sendData(const char *message)
     ttn.sendBytes(payload, sizeof(payload), 1, 0);
 }
 
-String formedAsJSON(double tempp, double humm, String state)
+String formedAsJSON(double tempp, double humm, double bat, String state)
 {
     StaticJsonDocument<200> doc;
     // Serial.println(humm);
@@ -154,7 +157,12 @@ String formedAsJSON(double tempp, double humm, String state)
 
     doc["temp"] = round2(tempp);
     doc["hum"] = round2(humm);
+    doc["bat"] = round2(bat);
     doc["state"] = state;
+    doc["final"] = "final";
+    doc["final2"] = "final2";
+    doc["final3"] = "final3";
+      doc["final4"] = "final4";
     // JSON verisini serileştirme
     String json;
     serializeJson(doc, json);
@@ -178,10 +186,12 @@ void setup()
 
     temp = dht.readTemperature();
     hum = dht.readHumidity();
+    bat = analogRead(ADC_READ_PIN)*(2.9/4095)*4.4;
 
     Serial.println(temp);
     Serial.println(hum);
-    Serial.println(analogRead(ADC_READ_PIN)*(2.9/4095)*4.4);
+    Serial.println(bat);
+
     pinMode(REG_3V3_EN, OUTPUT);
     digitalWrite(REG_3V3_EN, HIGH);
     delay(300);
@@ -212,7 +222,7 @@ void setup()
     // Make sure any pending transactions are handled first
     waitForTransactions();
     // Send our data
-    sendData(formedAsJSON(temp, hum, state).c_str());
+    sendData(formedAsJSON(temp, hum,bat, state).c_str());
     // Make sure our transactions is handled before going to sleep
     waitForTransactions();
 
