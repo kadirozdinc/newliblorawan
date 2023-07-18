@@ -2,25 +2,20 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <TTN_esp32.h>
-// #include "TTN_CayenneLPP.h"
-#include <ArduinoJson.h>
 #include "DHT.h"
 /***************************************************************************
  *  Go to your TTN console register a device then the copy fields
  *  and replace the CHANGE_ME strings below
  ****************************************************************************/
-const char *devEui = "70B3D57ED004397D";                 // Change to TTN Device EUI
-const char *appEui = "1300000000000013";                 // Change to TTN Application EUI
-const char *appKey = "47521E11573093C237C7333983DD475C"; // Chaneg to TTN Application Key
+// const char *devEui = "80B3D57ED004397E";                 // Change to TTN Device EUI
+// const char *appEui = "1300000000000014";                 // Change to TTN Application EUI
+// const char *appKey = "47521E11573093C237C7333983DD475C"; // Chaneg to TTN Application Key
 
-double temp = 12.543;
-double hum = 30.543;
+double temp = 0;
+double hum = 0;
 double bat = 0;
 
-String state = "normal";
-
 TTN_esp32 ttn;
-StaticJsonDocument<96> doc;
 
 #define DHTPIN 10
 #define DHTTYPE DHT22
@@ -30,7 +25,7 @@ StaticJsonDocument<96> doc;
 
 #define C3
 
-#define SLEEP_SECONDS 15
+#define SLEEP_SECONDS 20
 
 #ifdef C3
 
@@ -49,12 +44,12 @@ StaticJsonDocument<96> doc;
 #define DIO1 14
 #define DIO2 27
 #endif
-
-// Declerations
-void parseJson(String gelen);
-String formedAsJSON(double temp, double hum, String state);
-double round2(double value);
-String getSensorData();
+struct SensorData {
+    uint32_t temperature : 10; // 10 bit sıcaklık alanı
+    uint32_t batteryVoltage : 9; // 9 bit batarya voltajı alanı
+    uint32_t humidity : 10; // 7 bit nem alanı
+    uint32_t motorStatus : 1; // 1 bit motor çalışma bilgisi alanı
+};
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -75,12 +70,14 @@ void print_wakeup_reason()
         break;
     case 4:
         Serial.println("Wakeup caused by touchpad");
+      
         break;
     case 5:
         Serial.println("Wakeup caused by ULP program");
         break;
     default:
         Serial.println("Wakeup was not caused by deep sleep");
+       
         break;
     }
 }
@@ -104,32 +101,14 @@ void message(const uint8_t *payload, size_t size, uint8_t port, int rssi)
     String asciiData;
     for (int i = 0; i < size; i++)
     {
-        Serial.printf(" %c", payload[i]);
+        //Serial.printf(" %c", payload[i]);
         asciiData += (char)payload[i];
     }
     Serial.println();
     Serial.println(asciiData);
-    parseJson(asciiData);
+    
 }
 
-void parseJson(String gelen)
-{
-    DeserializationError error = deserializeJson(doc, gelen);
-
-    if (error)
-    {
-        Serial.print("deserializeJson() failed: ");
-        Serial.println(error.c_str());
-        return;
-    }
-
-    int no = doc["no"];                   // 12
-    float temp = doc["temp"];             // 24.5
-    const char *message = doc["message"]; // "selam"
-    Serial.println(no);
-    Serial.println(temp);
-    Serial.println(message);
-}
 
 /*
 Veri önce formedAsJSON fonksiyonu ile JSON String ifadesine dönüştürülüyor serialize fonksiyonu ile
@@ -139,8 +118,8 @@ void sendData(const char *message)
 {
     // Metni uint8_t türünden bir byte dizisine dönüştürme
     size_t length = strlen(message);
-    Serial.println(length);
-    Serial.println(LMIC.datarate);
+    // Serial.println(length);
+    // Serial.println(LMIC.datarate);
     uint8_t payload[length];
     for (size_t i = 0; i < length; i++)
     {
@@ -149,64 +128,94 @@ void sendData(const char *message)
     ttn.sendBytes(payload, sizeof(payload), 1, 0);
 }
 
-String formedAsJSON(double tempp, double humm, double bat, String state)
-{
-    StaticJsonDocument<200> doc;
-    // Serial.println(humm);
-    // Serial.println(temp);
+// 32 bit veriyi göndermek için fonksiyon
+bool send32BitData(uint32_t data) {
+    uint8_t payload[4];
+    payload[0] = (data >> 24) & 0xFF; // En üst 8 bit
+    payload[1] = (data >> 16) & 0xFF; // Sonraki 8 bit
+    payload[2] = (data >> 8) & 0xFF;  // Sonraki 8 bit
+    payload[3] = data & 0xFF;         // En alt 8 bit
 
-    doc["temp"] = round2(tempp);
-    doc["hum"] = round2(humm);
-    doc["bat"] = round2(bat);
-    doc["state"] = state;
-    doc["final"] = "final";
-    doc["final2"] = "final2";
-    doc["final3"] = "final3";
-      doc["final4"] = "final4";
-    // JSON verisini serileştirme
-    String json;
-    serializeJson(doc, json);
-    Serial.println(json);
-    // serializeJson(doc,Serial);
+    // Gönderim işlemini yap
+    bool sendStatus = ttn.sendBytes(payload, 4, 1, 0);
 
-    return json;
+    return sendStatus;
 }
 
-double round2(double value)
-{
-    return (int)(value * 100 + 0.5) / 100.0;
-}
 
+
+
+// void Control(){
+
+// while(digitalRead(2)==HIGH){
+//     if(millis()>5000){
+//         Serial.println("bluetooth starting...");
+//         ttn.stop();
+// 		ble.begin();
+
+//     }
+//     else Serial.println("TTN will work");
+
+// }
+
+
+// }
 void setup()
 {
-    Serial.begin(115200);
-    dht.begin();
-    delay(500);
-    Serial.println("Starting");
-
-    temp = dht.readTemperature();
-    hum = dht.readHumidity();
-    bat = analogRead(ADC_READ_PIN)*(2.9/4095)*4.4;
-
-    Serial.println(temp);
-    Serial.println(hum);
-    Serial.println(bat);
-
     pinMode(REG_3V3_EN, OUTPUT);
     digitalWrite(REG_3V3_EN, HIGH);
-    delay(300);
+    Serial.begin(115200);
+    struct SensorData sensorData;
+    // Control();
+
+    // print_wakeup_reason();
+    // if(wakeByButton == true){
+    // Serial.println("wake By Button");
+
+    // }
+
+    dht.begin();
+    delay(100);
+    Serial.println("Starting");
+    delay(900);
+
+    bat = analogRead(ADC_READ_PIN) * (2.9 / 4095) * 4.4;
+    
+    sensorData.temperature = (unsigned int)((dht.readTemperature()*100)/10);
+    sensorData.humidity = (unsigned int)((dht.readHumidity()*100)/10);
+    sensorData.batteryVoltage = (unsigned int)((bat*100));
+    sensorData.motorStatus = 0;
+    uint32_t packedData = *(uint32_t*)&sensorData;
+
+    Serial.println(sensorData.temperature);
+    Serial.println(dht.readTemperature());
+    Serial.println();
+
+    Serial.println(sensorData.humidity);
+    Serial.println(dht.readHumidity());
+    Serial.println();
+
+    Serial.println(sensorData.batteryVoltage);
+    Serial.println(bat);
+
+   
+    bat = analogRead(ADC_READ_PIN) * (2.9 / 4095) * 4.4;
+
+    // Serial.println(temp);
+    // Serial.println(hum);
+    // Serial.println(bat);
 
     // setCpuFrequencyMhz(10); // reduce clock to consume low current
 
     // Print the wakeup reason for ESP32
-    print_wakeup_reason();
+   
 
     ttn.begin(SS, UNUSED_PIN, RST_LoRa, DIO0, DIO1, DIO2);
     // Declare callback function for handling downlink messages from server
     ttn.onMessage(message);
     // Join the network
 
-    ttn.join(devEui, appEui, appKey);
+    ttn.join(/*devEui, appEui, appKey*/);
 
     LMIC_setAdrMode(false);
     LMIC_setDrTxpow(DR_SF10, 14);
@@ -221,8 +230,10 @@ void setup()
 
     // Make sure any pending transactions are handled first
     waitForTransactions();
+
     // Send our data
-    sendData(formedAsJSON(temp, hum,bat, state).c_str());
+    send32BitData(packedData);
+
     // Make sure our transactions is handled before going to sleep
     waitForTransactions();
 
@@ -230,7 +241,7 @@ void setup()
     esp_sleep_enable_timer_wakeup(SLEEP_SECONDS * 1000000);
 
     // Set wakeUp pin to wake the system up when button is pressed
-    esp_deep_sleep_enable_gpio_wakeup(1<<EXT_WAKEUP_PIN ,ESP_GPIO_WAKEUP_GPIO_HIGH);
+    //esp_deep_sleep_enable_gpio_wakeup(1 << EXT_WAKEUP_PIN, ESP_GPIO_WAKEUP_GPIO_HIGH);
 
     // Go to sleep now
     Serial.println("Going to sleep!");
