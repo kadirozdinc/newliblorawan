@@ -3,6 +3,7 @@
 #include <Adafruit_Sensor.h>
 #include <TTN_esp32.h>
 #include "DHT.h"
+#include "ByteArrayUtils.h"
 /***************************************************************************
  *  Go to your TTN console register a device then the copy fields
  *  and replace the CHANGE_ME strings below
@@ -44,12 +45,24 @@ TTN_esp32 ttn;
 #define DIO1 14
 #define DIO2 27
 #endif
-struct SensorData {
-    uint32_t temperature : 10; // 10 bit sıcaklık alanı
+struct SensorData
+{
+    uint32_t temperature : 10;   // 10 bit sıcaklık alanı
     uint32_t batteryVoltage : 9; // 9 bit batarya voltajı alanı
-    uint32_t humidity : 10; // 7 bit nem alanı
-    uint32_t motorStatus : 1; // 1 bit motor çalışma bilgisi alanı
+    uint32_t humidity : 10;      // 7 bit nem alanı
+    uint32_t motorStatus : 1;    // 1 bit motor çalışma bilgisi alanı
 };
+
+struct DateData
+{
+    uint32_t hour1 : 5; // 10 bit sıcaklık alanı
+    uint32_t min1 : 6;  // 9 bit batarya voltajı alanı
+    uint32_t hour2 : 5; // 7 bit nem alanı
+    uint32_t min2 : 6;  // 1 bit motor çalışma bilgisi alanı
+};
+
+uint32_t unpackedData = 0;
+struct DateData day;
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -70,14 +83,14 @@ void print_wakeup_reason()
         break;
     case 4:
         Serial.println("Wakeup caused by touchpad");
-      
+
         break;
     case 5:
         Serial.println("Wakeup caused by ULP program");
         break;
     default:
         Serial.println("Wakeup was not caused by deep sleep");
-       
+
         break;
     }
 }
@@ -88,48 +101,44 @@ void waitForTransactions()
     Serial.println("Waiting took " + String(ttn.waitForPendingTransactions()) + "ms");
 }
 
-/*
-Önce mesaj node-red tarafında JSON String olarak gönderiliyor burada biz bunu byte byte alıyoruz.
-Daha sonrasında byte byte alınan veri bir String JSON olarak birleştiriliyor daha sonrasında JSON
-kütüphanesi deserialize fonksiyonu ile parse işlemi gerçekleştiriliyor.
-*/
+void unPack(){
+    day.min1 = unpackedData & (0x3F);
+    day.hour1 = (unpackedData & ((0x1F) << 6)) >> 6;
+    day.min2 = (unpackedData & ((0x3F) << 11)) >> 11;
+    day.hour2 = (unpackedData & ((0x1F) << 17)) >> 17;
 
+    Serial.print(day.hour1);
+    Serial.println(day.min1);
+    Serial.print(day.hour2);
+    Serial.println(day.min2);
+
+}
 void message(const uint8_t *payload, size_t size, uint8_t port, int rssi)
 {
     Serial.println("-- MESSAGE");
     Serial.printf("Received %d bytes on port %d (RSSI=%ddB) :", size, port, rssi);
-    String asciiData;
+
+    unpackedData = 0;
+
     for (int i = 0; i < size; i++)
     {
-        //Serial.printf(" %c", payload[i]);
-        asciiData += (char)payload[i];
+        Serial.printf(" %x", payload[i]);
+        unpackedData |= (payload[i]) << ((size - 1 - i) * 8);
     }
-    Serial.println();
-    Serial.println(asciiData);
+
+    unpackedData = unpackedData & 0x3fffff;
     
-}
 
+    Serial.println();
+    Serial.printf("%x ", unpackedData);
+    Serial.println();
+    unPack();
 
-/*
-Veri önce formedAsJSON fonksiyonu ile JSON String ifadesine dönüştürülüyor serialize fonksiyonu ile
-sonrasunda veri byte byte bir char dizisi içerisine dolduruluyor ve gönderiliyor
-*/
-void sendData(const char *message)
-{
-    // Metni uint8_t türünden bir byte dizisine dönüştürme
-    size_t length = strlen(message);
-    // Serial.println(length);
-    // Serial.println(LMIC.datarate);
-    uint8_t payload[length];
-    for (size_t i = 0; i < length; i++)
-    {
-        payload[i] = static_cast<uint8_t>(message[i]);
-    }
-    ttn.sendBytes(payload, sizeof(payload), 1, 0);
 }
 
 // 32 bit veriyi göndermek için fonksiyon
-bool send32BitData(uint32_t data) {
+bool send32BitData(uint32_t data)
+{
     uint8_t payload[4];
     payload[0] = (data >> 24) & 0xFF; // En üst 8 bit
     payload[1] = (data >> 16) & 0xFF; // Sonraki 8 bit
@@ -141,9 +150,6 @@ bool send32BitData(uint32_t data) {
 
     return sendStatus;
 }
-
-
-
 
 // void Control(){
 
@@ -158,7 +164,6 @@ bool send32BitData(uint32_t data) {
 
 // }
 
-
 // }
 void setup()
 {
@@ -166,6 +171,7 @@ void setup()
     digitalWrite(REG_3V3_EN, HIGH);
     Serial.begin(115200);
     struct SensorData sensorData;
+
     // Control();
 
     // print_wakeup_reason();
@@ -180,12 +186,13 @@ void setup()
     delay(900);
 
     bat = analogRead(ADC_READ_PIN) * (2.9 / 4095) * 4.4;
-    
-    sensorData.temperature = (unsigned int)((dht.readTemperature()*100)/10);
-    sensorData.humidity = (unsigned int)((dht.readHumidity()*100)/10);
-    sensorData.batteryVoltage = (unsigned int)((bat*100));
+
+    sensorData.temperature = (unsigned int)((dht.readTemperature() * 100) / 10);
+    sensorData.humidity = (unsigned int)((dht.readHumidity() * 100) / 10);
+    sensorData.batteryVoltage = (unsigned int)((bat * 100));
     sensorData.motorStatus = 0;
-    uint32_t packedData = *(uint32_t*)&sensorData;
+
+    uint32_t packedData = *(uint32_t *)&sensorData;
 
     Serial.println(sensorData.temperature);
     Serial.println(dht.readTemperature());
@@ -198,7 +205,6 @@ void setup()
     Serial.println(sensorData.batteryVoltage);
     Serial.println(bat);
 
-   
     bat = analogRead(ADC_READ_PIN) * (2.9 / 4095) * 4.4;
 
     // Serial.println(temp);
@@ -208,7 +214,6 @@ void setup()
     // setCpuFrequencyMhz(10); // reduce clock to consume low current
 
     // Print the wakeup reason for ESP32
-   
 
     ttn.begin(SS, UNUSED_PIN, RST_LoRa, DIO0, DIO1, DIO2);
     // Declare callback function for handling downlink messages from server
@@ -241,7 +246,7 @@ void setup()
     esp_sleep_enable_timer_wakeup(SLEEP_SECONDS * 1000000);
 
     // Set wakeUp pin to wake the system up when button is pressed
-    //esp_deep_sleep_enable_gpio_wakeup(1 << EXT_WAKEUP_PIN, ESP_GPIO_WAKEUP_GPIO_HIGH);
+    // esp_deep_sleep_enable_gpio_wakeup(1 << EXT_WAKEUP_PIN, ESP_GPIO_WAKEUP_GPIO_HIGH);
 
     // Go to sleep now
     Serial.println("Going to sleep!");
